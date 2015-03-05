@@ -131,7 +131,7 @@ func (f *FileResource) createFile(request *restful.Request, response *restful.Re
 		response.WriteErrorString(http.StatusInternalServerError, err.Error())
 		return
 	}
-	response.WriteHeader(http.StatusCreated)
+	response.WriteHeader(http.StatusOK)
 	response.WriteEntity(newFile)
 }
 
