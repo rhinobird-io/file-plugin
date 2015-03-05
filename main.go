@@ -4,6 +4,7 @@ import (
 	"code.google.com/p/go-uuid/uuid"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"github.com/emicklei/go-restful"
 	"github.com/garyburd/redigo/redis"
 	"io"
@@ -53,7 +54,9 @@ func (f FileResource) findFile(request *restful.Request, response *restful.Respo
 		response.WriteErrorString(http.StatusInternalServerError, err.Error())
 		return
 	}
+	response.Header().Add("Content-Disposition", fmt.Sprintf("attachment; filename=%s", file.Name))
 	path := filepath.Join(f.dir, file.Id, file.Name)
+
 	http.ServeFile(response, request.Request, path)
 }
 
