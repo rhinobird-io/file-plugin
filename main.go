@@ -31,24 +31,34 @@ func (f FileResource) Register(container *restful.Container) {
 		Consumes(restful.MIME_XML, restful.MIME_JSON).
 		Produces(restful.MIME_JSON, restful.MIME_XML)
 
-	ws.Route(ws.GET("/{id}").To(f.findFile))
+	ws.Route(ws.GET("/{id}").To(f.getFileInfo))
+	ws.Route(ws.GET("/{id}/download").To(f.downloadFile))
 	ws.Route(ws.POST("").To(f.createFile).Consumes("multipart/form-data"))
 
 	container.Add(ws)
 }
 
-func (f FileResource) findFile(request *restful.Request, response *restful.Response) {
-	id := request.PathParameter("id")
+func (f FileResource) findFile(id string) (*File, error) {
 	conn := f.redisPool.Get()
 	defer conn.Close()
 	serialized, err := redis.Bytes(conn.Do("GET", id))
 	if err != nil {
+		return nil, nil
+	}
+	var file File
+	err = json.Unmarshal(serialized, &file)
+	if err != nil {
+		return nil, err
+	}
+	return &file, nil
+}
+func (f FileResource) downloadFile(request *restful.Request, response *restful.Response) {
+	file, err := f.findFile(request.PathParameter("id"))
+	if file == nil {
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusNotFound, "File not found!")
 		return
 	}
-	var file File
-	err = json.Unmarshal(serialized, &file)
 	if err != nil {
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusInternalServerError, err.Error())
@@ -58,6 +68,20 @@ func (f FileResource) findFile(request *restful.Request, response *restful.Respo
 	path := filepath.Join(f.dir, file.Id, file.Name)
 
 	http.ServeFile(response, request.Request, path)
+}
+func (f FileResource) getFileInfo(request *restful.Request, response *restful.Response) {
+	file, err := f.findFile(request.PathParameter("id"))
+	if file == nil {
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusNotFound, "File not found!")
+		return
+	}
+	if err != nil {
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.WriteEntity(file)
 }
 
 func (f *FileResource) createFile(request *restful.Request, response *restful.Response) {
