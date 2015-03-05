@@ -1,0 +1,24 @@
+{
+	"ImportPath": "twfile",
+	"GoVersion": "go1.4.2",
+	"Deps": [
+		{
+			"ImportPath": "code.google.com/p/go-uuid/uuid",
+			"Comment": "null-15",
+			"Rev": "35bc42037350f0078e3c974c6ea690f1926603ab"
+		},
+		{
+			"ImportPath": "github.com/emicklei/go-restful",
+			"Comment": "v1.1.3-5-ga42a2ad",
+			"Rev": "a42a2add21d9f4ef73ad143819427d418eb6b298"
+		},
+		{
+			"ImportPath": "github.com/garyburd/redigo/internal",
+			"Rev": "61e2910408efd40dafb3c7d856a4cf8aeb5fb1c6"
+		},
+		{
+			"ImportPath": "github.com/garyburd/redigo/redis",
+			"Rev": "61e2910408efd40dafb3c7d856a4cf8aeb5fb1c6"
+		}
+	]
+}

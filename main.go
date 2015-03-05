@@ -111,6 +111,7 @@ func (f *FileResource) createFile(request *restful.Request, response *restful.Re
 var (
 	redisAddress   = flag.String("redis-address", ":6379", "Address to the Redis server")
 	maxConnections = flag.Int("max-connections", 10, "Max connections to Redis")
+	dir            = flag.String("dir", "/data", "File directory")
 )
 
 func main() {
@@ -131,10 +132,9 @@ func main() {
 	defer redisPool.Close()
 
 	wsContainer := restful.NewContainer()
-	dir := filepath.Join(os.TempDir(), "teamworkfiles")
-	f := FileResource{dir, redisPool}
+	f := FileResource{*dir, redisPool}
 	f.Register(wsContainer)
-	log.Printf("start listening on localhost:8080")
-	server := &http.Server{Addr: ":8080", Handler: wsContainer}
+	log.Printf("start listening on port " + os.Getenv("PORT"))
+	server := &http.Server{Addr: ":" + os.Getenv("PORT"), Handler: wsContainer}
 	log.Fatal(server.ListenAndServe())
 }
