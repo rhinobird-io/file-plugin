@@ -17,6 +17,7 @@ import (
 type File struct {
 	Id   string `json:"id"`
 	Name string `json:"name"`
+	Status string `json:"status"`
 }
 
 type FileResource struct {
@@ -33,7 +34,8 @@ func (f FileResource) Register(container *restful.Container) {
 
 	ws.Route(ws.GET("/{id}").To(f.getFileInfo))
 	ws.Route(ws.GET("/{id}/download").To(f.downloadFile))
-	ws.Route(ws.POST("").To(f.createFile).Consumes("multipart/form-data"))
+	ws.Route(ws.POST("").To(f.createFile))
+	ws.Route(ws.PUT("/{id}").To(f.uploadFile).Consumes("multipart/form-data"))
 
 	container.Add(ws)
 }
@@ -85,6 +87,46 @@ func (f FileResource) getFileInfo(request *restful.Request, response *restful.Re
 }
 
 func (f *FileResource) createFile(request *restful.Request, response *restful.Response) {
+	file := new(File)
+	err := request.ReadEntity(&file)
+	if err != nil {
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusBadRequest, err.Error())
+		return
+	}
+	file.Id = uuid.New()
+	file.Status = "init"
+	
+	conn := f.redisPool.Get()
+	defer conn.Close()
+	serialized, err := json.Marshal(file)
+	if err != nil {
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusInternalServerError, err.Error())
+		return
+	}
+	_, err = conn.Do("SET", file.Id, serialized)
+	if err != nil {
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.WriteHeader(http.StatusOK)
+	response.WriteEntity(file)
+}
+
+func (f *FileResource) uploadFile(request *restful.Request, response *restful.Response) {
+	fileInfo, err := f.findFile(request.PathParameter("id"))
+	if fileInfo == nil {
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusNotFound, "File not found!")
+		return
+	}
+	if err != nil {
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusInternalServerError, err.Error())
+		return
+	}
 	file, header, err := request.Request.FormFile("file")
 	if err != nil {
 		response.AddHeader("Content-Type", "text/plain")
@@ -92,9 +134,29 @@ func (f *FileResource) createFile(request *restful.Request, response *restful.Re
 		return
 	}
 	defer file.Close()
-	newFile := File{uuid.New(), header.Filename}
+	if fileInfo.Name != header.Filename {
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusBadRequest, "File name does not match!")
+		return
+	}
+	conn := f.redisPool.Get()
+	defer conn.Close()
 
-	path := filepath.Join(f.dir, newFile.Id)
+	fileInfo.Status = "uploading"
+	serialized, err := json.Marshal(fileInfo)
+	if err != nil {
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusInternalServerError, err.Error())
+		return
+	}
+	_, err = conn.Do("SET", fileInfo.Id, serialized)
+	if err != nil {
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	path := filepath.Join(f.dir, fileInfo.Id)
 	err = os.MkdirAll(path, os.ModePerm)
 	if err != nil {
 		response.AddHeader("Content-Type", "text/plain")
@@ -102,7 +164,7 @@ func (f *FileResource) createFile(request *restful.Request, response *restful.Re
 		return
 	}
 
-	out, err := os.Create(filepath.Join(path, newFile.Name))
+	out, err := os.Create(filepath.Join(path, fileInfo.Name))
 	if err != nil {
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusInternalServerError, err.Error())
@@ -117,22 +179,21 @@ func (f *FileResource) createFile(request *restful.Request, response *restful.Re
 		return
 	}
 
-	conn := f.redisPool.Get()
-	defer conn.Close()
-	serialized, err := json.Marshal(newFile)
+	fileInfo.Status = "uploaded"
+	serialized, err = json.Marshal(fileInfo)
 	if err != nil {
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusInternalServerError, err.Error())
 		return
 	}
-	_, err = conn.Do("SET", newFile.Id, serialized)
+	_, err = conn.Do("SET", fileInfo.Id, serialized)
 	if err != nil {
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusInternalServerError, err.Error())
 		return
 	}
 	response.WriteHeader(http.StatusOK)
-	response.WriteEntity(newFile)
+	response.WriteEntity(fileInfo)
 }
 
 var (
