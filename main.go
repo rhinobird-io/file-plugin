@@ -30,11 +30,13 @@ type FileResource struct {
 func (f FileResource) Register(container *restful.Container) {
 	ws := new(restful.WebService)
 	ws.
-		Path("/files").Produces("*/*")
+		Path("/files").
+		Consumes(restful.MIME_XML, restful.MIME_JSON).
+		Produces(restful.MIME_JSON, restful.MIME_XML)
 
 	ws.Route(ws.GET("/{id}").To(f.getFileInfo).Produces("text/event-stream"))
 	ws.Route(ws.GET("/{id}/download").To(f.downloadFile))
-	ws.Route(ws.POST("").To(f.createFile).Consumes(restful.MIME_JSON))
+	ws.Route(ws.POST("").To(f.createFile))
 	ws.Route(ws.PUT("/{id}").To(f.uploadFile).Consumes("multipart/form-data"))
 
 	container.Add(ws)
