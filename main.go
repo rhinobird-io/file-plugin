@@ -74,7 +74,6 @@ func (f FileResource) downloadFile(request *restful.Request, response *restful.R
 	http.ServeFile(response, request.Request, path)
 }
 func (f FileResource) getFileInfo(request *restful.Request, response *restful.Response) {
-	log.Println("test")
 	file, err := f.findFile(request.PathParameter("id"))
 	if file == nil {
 		response.AddHeader("Content-Type", "text/plain")
@@ -123,7 +122,6 @@ func (f FileResource) getFileInfo(request *restful.Request, response *restful.Re
 			}
         }
 	} else {
-		fmt.Printf("writing")
 		fmt.Fprintf(w, "data: {\"type\": \"done\", \"content\": \"%s\"}\n\n", file.Status)
 		flusher.Flush()
 	}
