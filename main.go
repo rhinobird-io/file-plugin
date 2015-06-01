@@ -92,7 +92,7 @@ func (f FileResource) getFileInfo(request *restful.Request, response *restful.Re
 		response.WriteErrorString(http.StatusInternalServerError, "Streaming unsupported!")
 		return
 	}
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(time.Millisecond * 100)
 	notify := w.(http.CloseNotifier).CloseNotify()
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -113,6 +113,8 @@ func (f FileResource) getFileInfo(request *restful.Request, response *restful.Re
 			}
 		    if fileInfo.Status == "uploading" || file.Status == "init" {
 				fmt.Fprintf(w, "data: {\"type\": \"progress\", \"content\": \"%f\"}\n\n", fileInfo.Progress)
+				
+				log.Printf("send p=%f", fileInfo.Progress)
 				flusher.Flush()
 			}
 			if fileInfo.Status == "uploaded" || fileInfo.Status == "failed" {
@@ -227,10 +229,11 @@ func (f *FileResource) uploadFile(request *restful.Request, response *restful.Re
     length := request.Request.ContentLength
 	var read int64
     var p float32
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(time.Millisecond * 100)
 	go func() {
 		for _ = range ticker.C {
     		   fileInfo.Progress = p
+			log.Printf("save p=%f", p)
 		   saveFile()
         }
 	}()
@@ -250,6 +253,7 @@ func (f *FileResource) uploadFile(request *restful.Request, response *restful.Re
 
             if read > 0 {
                     p = float32(read*100) / float32(length)
+					log.Printf("read p=%f", p)
 				    out.Write(buffer[0:cBytes])
             } else {
                     break
