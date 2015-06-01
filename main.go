@@ -188,29 +188,35 @@ func (f *FileResource) uploadFile(request *restful.Request, response *restful.Re
 	}
 	conn := f.redisPool.Get()
 	defer conn.Close()
-	saveFile := func() {
+	saveFile := func() error {
 		serialized, err := json.Marshal(fileInfo)
 		if err != nil {
-			response.AddHeader("Content-Type", "text/plain")
-			response.WriteErrorString(http.StatusInternalServerError, err.Error())
-			return
+			return err
 		}
 		_, err = conn.Do("SET", fileInfo.Id, serialized)
 		if err != nil {
-			response.AddHeader("Content-Type", "text/plain")
-			response.WriteErrorString(http.StatusInternalServerError, err.Error())
-			return
+			return err
 		}
+		return nil
 	}
 	fileInfo.Status = "uploading"
 	fileInfo.Progress = 0
-	saveFile()
-
+	err = saveFile()
+	if err != nil{
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusInternalServerError, err.Error())
+		return
+	}
 	path := filepath.Join(f.dir, fileInfo.Id)
 	err = os.MkdirAll(path, os.ModePerm)
 	if err != nil {
 		fileInfo.Status = "failed"
-		saveFile()
+		err = saveFile()
+		if err != nil{
+			response.AddHeader("Content-Type", "text/plain")
+			response.WriteErrorString(http.StatusInternalServerError, err.Error())
+			return
+		}
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusInternalServerError, err.Error())
 		return
@@ -219,7 +225,12 @@ func (f *FileResource) uploadFile(request *restful.Request, response *restful.Re
 	out, err := os.Create(filepath.Join(path, fileInfo.Name))
 	if err != nil {
 		fileInfo.Status = "failed"
-		saveFile()
+		err = saveFile()
+		if err != nil{
+			response.AddHeader("Content-Type", "text/plain")
+			response.WriteErrorString(http.StatusInternalServerError, err.Error())
+			return
+		}
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusInternalServerError, err.Error())
 		return
@@ -234,7 +245,12 @@ func (f *FileResource) uploadFile(request *restful.Request, response *restful.Re
 		for _ = range ticker.C {
     		   fileInfo.Progress = p
 			log.Printf("save p=%f", p)
-		   saveFile()
+		   err = saveFile()
+			if err != nil{
+				response.AddHeader("Content-Type", "text/plain")
+				response.WriteErrorString(http.StatusInternalServerError, err.Error())
+				return
+			}
         }
 	}()
     for {
@@ -244,7 +260,12 @@ func (f *FileResource) uploadFile(request *restful.Request, response *restful.Re
                     break
             } else if err != nil {
 				fileInfo.Status = "failed"
-				saveFile()
+				err = saveFile()
+				if err != nil{
+					response.AddHeader("Content-Type", "text/plain")
+					response.WriteErrorString(http.StatusInternalServerError, err.Error())
+					return
+				}
 				response.AddHeader("Content-Type", "text/plain")
 				response.WriteErrorString(http.StatusInternalServerError, err.Error())
 				return
@@ -263,7 +284,12 @@ func (f *FileResource) uploadFile(request *restful.Request, response *restful.Re
 	ticker.Stop()
 	fileInfo.Status = "uploaded"
 	fileInfo.Progress = 100
-	saveFile()
+	err = saveFile()
+	if err != nil{
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusInternalServerError, err.Error())
+		return
+	}
 	response.WriteHeader(http.StatusOK)
 	response.WriteEntity(fileInfo)
 }
