@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"strings"
 )
 
 type File struct {
@@ -36,6 +37,7 @@ func (f FileResource) Register(container *restful.Container) {
 
 	ws.Route(ws.GET("/{id}").To(f.getFileInfo).Produces("text/event-stream"))
 	ws.Route(ws.GET("/{id}/download").To(f.downloadFile))
+	ws.Route(ws.GET("/{id}/fetch").To(f.downloadFile))
 	ws.Route(ws.POST("").To(f.createFile))
 	ws.Route(ws.PUT("/{id}").To(f.uploadFile).Consumes("multipart/form-data"))
 
@@ -68,7 +70,10 @@ func (f FileResource) downloadFile(request *restful.Request, response *restful.R
 		response.WriteErrorString(http.StatusInternalServerError, err.Error())
 		return
 	}
-	response.Header().Add("Content-Disposition", fmt.Sprintf("attachment; filename=%s", file.Name))
+	
+	if strings.HasSuffix(request.SelectedRoutePath(), "download") {
+		response.Header().Add("Content-Disposition", fmt.Sprintf("attachment; filename=%s", file.Name))
+	}
 	path := filepath.Join(f.dir, file.Id, file.Name)
 
 	http.ServeFile(response, request.Request, path)
