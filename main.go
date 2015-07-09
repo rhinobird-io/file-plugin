@@ -119,7 +119,6 @@ func (f FileResource) getFileInfo(request *restful.Request, response *restful.Re
 		    if fileInfo.Status == "uploading" || file.Status == "init" {
 				fmt.Fprintf(w, "data: {\"type\": \"progress\", \"content\": \"%f\"}\n\n", fileInfo.Progress)
 				
-				log.Printf("send p=%f", fileInfo.Progress)
 				flusher.Flush()
 			}
 			if fileInfo.Status == "uploaded" || fileInfo.Status == "failed" {
