@@ -8,10 +8,11 @@ import (
 	"github.com/emicklei/go-restful"
 	"github.com/garyburd/redigo/redis"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"mime/multipart"
 	"os"
-	"path/filepath"
 	"time"
 	"strings"
 )
@@ -21,10 +22,11 @@ type File struct {
 	Name string `json:"name"`
 	Status string `json:"status"`
 	Progress float32 `json:"progress"`
+	Url string `json:"url"`
 }
 
 type FileResource struct {
-	dir       string
+	weedUrl       string
 	redisPool *redis.Pool
 }
 
@@ -70,13 +72,22 @@ func (f FileResource) downloadFile(request *restful.Request, response *restful.R
 		response.WriteErrorString(http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	resp, err := http.Get(file.Url)
+	if err != nil {
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusInternalServerError, err.Error())
+		return
+	}
+	for k, v := range resp.Header {
+		response.Header().Set(k, v[0])
+	}
+	response.WriteHeader(resp.StatusCode)
 	
 	if strings.HasSuffix(request.SelectedRoutePath(), "download") {
-		response.Header().Add("Content-Disposition", fmt.Sprintf("attachment; filename=%s", file.Name))
+		response.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", file.Name))
 	}
-	path := filepath.Join(f.dir, file.Id, file.Name)
-
-	http.ServeFile(response, request.Request, path)
+	io.Copy(response.ResponseWriter, resp.Body)
 }
 func (f FileResource) getFileInfo(request *restful.Request, response *restful.Response) {
 	file, err := f.findFile(request.PathParameter("id"))
@@ -136,6 +147,11 @@ func (f FileResource) getFileInfo(request *restful.Request, response *restful.Re
 	ticker.Stop()
 }
 
+type WeedInfo struct {
+	Fid string `json:"fid"`
+	Url string `json:"url"`
+}
+
 func (f *FileResource) createFile(request *restful.Request, response *restful.Response) {
 	file := new(File)
 	err := request.ReadEntity(&file)
@@ -146,7 +162,21 @@ func (f *FileResource) createFile(request *restful.Request, response *restful.Re
 	}
 	file.Id = uuid.New()
 	file.Status = "init"
-	
+	resp, err := http.Post(f.weedUrl+"/dir/assign", "text/plain", nil)
+	if err != nil {
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusBadRequest, err.Error())
+		return
+	}
+	decoder := json.NewDecoder(resp.Body)
+	var info WeedInfo
+	err = decoder.Decode(&info)
+	if err != nil {
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusBadRequest, err.Error())
+		return
+	}
+	file.Url = fmt.Sprintf("http://%s/%s", info.Url, info.Fid)
 	conn := f.redisPool.Get()
 	defer conn.Close()
 	serialized, err := json.Marshal(file)
@@ -165,9 +195,21 @@ func (f *FileResource) createFile(request *restful.Request, response *restful.Re
 	response.WriteEntity(file)
 }
 
+
+type ProgressReader struct {
+	Input io.Reader
+	Size int64
+	Finished int64
+}
+
+func (c ProgressReader) Read(p []byte) (n int, err error) {
+    cBytes, err := c.Input.Read(p)
+    c.Finished = c.Finished + int64(cBytes)
+	return cBytes, err
+}
+
 func (f *FileResource) uploadFile(request *restful.Request, response *restful.Response) {
 	fileInfo, err := f.findFile(request.PathParameter("id"))
-
 	if fileInfo == nil {
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusNotFound, "File not found!")
@@ -211,44 +253,17 @@ func (f *FileResource) uploadFile(request *restful.Request, response *restful.Re
 		response.WriteErrorString(http.StatusInternalServerError, err.Error())
 		return
 	}
-	path := filepath.Join(f.dir, fileInfo.Id)
-	err = os.MkdirAll(path, os.ModePerm)
-	if err != nil {
-		fileInfo.Status = "failed"
-		err = saveFile()
-		if err != nil{
-			response.AddHeader("Content-Type", "text/plain")
-			response.WriteErrorString(http.StatusInternalServerError, err.Error())
-			return
-		}
-		response.AddHeader("Content-Type", "text/plain")
-		response.WriteErrorString(http.StatusInternalServerError, err.Error())
-		return
-	}
 
-	out, err := os.Create(filepath.Join(path, fileInfo.Name))
-	if err != nil {
-		fileInfo.Status = "failed"
-		err = saveFile()
-		if err != nil{
-			response.AddHeader("Content-Type", "text/plain")
-			response.WriteErrorString(http.StatusInternalServerError, err.Error())
-			return
-		}
-		response.AddHeader("Content-Type", "text/plain")
-		response.WriteErrorString(http.StatusInternalServerError, err.Error())
-		return
-	}
-	defer out.Close()
-
-    length := request.Request.ContentLength
-	var read int64
-    var p float32
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+	progressReader := new(ProgressReader)
+	progressReader.Input = file
+	progressReader.Size = request.Request.ContentLength
 	ticker := time.NewTicker(time.Millisecond * 100)
+	defer ticker.Stop()
 	go func() {
 		for _ = range ticker.C {
-    		   fileInfo.Progress = p
-			log.Printf("save p=%f", p)
+    		   fileInfo.Progress = float32(progressReader.Finished) / float32(progressReader.Size)
 		   err = saveFile()
 			if err != nil{
 				response.AddHeader("Content-Type", "text/plain")
@@ -257,35 +272,46 @@ func (f *FileResource) uploadFile(request *restful.Request, response *restful.Re
 			}
         }
 	}()
-    for {
-            buffer := make([]byte, 100000)
-            cBytes, err := file.Read(buffer)
-            if err == io.EOF {
-                    break
-            } else if err != nil {
-				fileInfo.Status = "failed"
-				err = saveFile()
-				if err != nil{
-					response.AddHeader("Content-Type", "text/plain")
-					response.WriteErrorString(http.StatusInternalServerError, err.Error())
-					return
-				}
-				response.AddHeader("Content-Type", "text/plain")
-				response.WriteErrorString(http.StatusInternalServerError, err.Error())
-				return
-			}
-            read = read + int64(cBytes)
-
-            if read > 0 {
-                    p = float32(read*100) / float32(length)
-					log.Printf("read p=%f", p)
-				    out.Write(buffer[0:cBytes])
-            } else {
-                    break
-            }
-
-    }
-	ticker.Stop()
+	go func() {
+		part, err := writer.CreateFormFile("file", header.Filename)
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		_, err = io.Copy(part, progressReader)
+		if err != nil {
+			writer.Close()
+			pw.CloseWithError(err)
+			return
+		}
+		writer.Close()
+		pw.Close()
+	}()
+	r, err := http.NewRequest("PUT", fileInfo.Url, pr)
+	if err != nil{
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusInternalServerError, err.Error())
+		return
+	}
+	r.Header.Set("Content-Type", writer.FormDataContentType())
+	client := &http.Client{}
+	res, err := client.Do(r)
+	if err != nil{
+		response.AddHeader("Content-Type", "text/plain")
+		response.WriteErrorString(http.StatusInternalServerError, err.Error())
+		return
+	}
+	if res.StatusCode >= 400 {
+		response.AddHeader("Content-Type", "text/plain")
+		str, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			response.AddHeader("Content-Type", "text/plain")
+			response.WriteErrorString(http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.WriteErrorString(res.StatusCode, string(str))
+		return
+	}
 	fileInfo.Status = "uploaded"
 	fileInfo.Progress = 100
 	err = saveFile()
@@ -301,7 +327,7 @@ func (f *FileResource) uploadFile(request *restful.Request, response *restful.Re
 var (
 	redisAddress   = flag.String("redis-address", ":6379", "Address to the Redis server")
 	maxConnections = flag.Int("max-connections", 10, "Max connections to Redis")
-	dir            = flag.String("dir", "/data", "File directory")
+	weedUrl        = flag.String("weed-master-url", "localhost:9393", "Weed master URL")
 )
 
 func main() {
@@ -322,7 +348,7 @@ func main() {
 	defer redisPool.Close()
 
 	wsContainer := restful.NewContainer()
-	f := FileResource{*dir, redisPool}
+	f := FileResource{*weedUrl, redisPool}
 	f.Register(wsContainer)
 	log.Printf("start listening on port " + os.Getenv("PORT"))
 	server := &http.Server{Addr: ":" + os.Getenv("PORT"), Handler: wsContainer}
