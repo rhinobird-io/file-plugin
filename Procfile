@@ -1,1 +1,1 @@
-web: rbfile -redis-address=$REDIS_IP:$REDIS_PORT --dir=$FILE_DIR
+web: rbfile -redis-address=$REDIS_IP:$REDIS_PORT --weed-master-url=$WEED_MASTER_URL
