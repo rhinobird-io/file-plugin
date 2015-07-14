@@ -249,7 +249,7 @@ func (f *FileResource) uploadFile(request *restful.Request, response *restful.Re
 	defer ticker.Stop()
 	go func() {
 		for _ = range ticker.C {
-    		   fileInfo.Progress = float32(progressReader.Finished) / float32(progressReader.Size)
+    		   fileInfo.Progress = progressReader.Progress()
 		   err = saveFile()
 			if err != nil{
 				response.AddHeader("Content-Type", "text/plain")
