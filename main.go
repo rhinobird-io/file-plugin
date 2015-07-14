@@ -244,8 +244,7 @@ func (f *FileResource) uploadFile(request *restful.Request, response *restful.Re
 
 	pr, pw := io.Pipe()
 	writer := multipart.NewWriter(pw)
-	progressReader := progress.NewProgressReader(file)
-	progressReader.Size = request.Request.ContentLength
+	progressReader := progress.NewProgressReader(file, request.Request.ContentLength)
 	ticker := time.NewTicker(time.Millisecond * 100)
 	defer ticker.Stop()
 	go func() {
