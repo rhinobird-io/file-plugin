@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/emicklei/go-restful"
 	"github.com/garyburd/redigo/redis"
+	"github.com/liuyang1204/go-progress"
 	"io"
 	"io/ioutil"
 	"log"
@@ -195,19 +196,6 @@ func (f *FileResource) createFile(request *restful.Request, response *restful.Re
 	response.WriteEntity(file)
 }
 
-
-type ProgressReader struct {
-	Input io.Reader
-	Size int64
-	Finished int64
-}
-
-func (c ProgressReader) Read(p []byte) (n int, err error) {
-    cBytes, err := c.Input.Read(p)
-    c.Finished = c.Finished + int64(cBytes)
-	return cBytes, err
-}
-
 func (f *FileResource) uploadFile(request *restful.Request, response *restful.Response) {
 	fileInfo, err := f.findFile(request.PathParameter("id"))
 	if fileInfo == nil {
@@ -256,8 +244,7 @@ func (f *FileResource) uploadFile(request *restful.Request, response *restful.Re
 
 	pr, pw := io.Pipe()
 	writer := multipart.NewWriter(pw)
-	progressReader := new(ProgressReader)
-	progressReader.Input = file
+	progressReader := progress.NewProgressReader(file)
 	progressReader.Size = request.Request.ContentLength
 	ticker := time.NewTicker(time.Millisecond * 100)
 	defer ticker.Stop()
