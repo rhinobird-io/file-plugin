@@ -19,6 +19,10 @@
 		{
 			"ImportPath": "github.com/garyburd/redigo/redis",
 			"Rev": "61e2910408efd40dafb3c7d856a4cf8aeb5fb1c6"
+		},
+		{
+			"ImportPath": "github.com/liuyang1204/go-progress",
+			"Rev": "6b0ac7635b467bd0d3403acb7cbf37f92e750989"
 		}
 	]
 }
