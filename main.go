@@ -159,6 +159,7 @@ func (f *FileResource) createFile(request *restful.Request, response *restful.Re
 	if err != nil {
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusBadRequest, err.Error())
+		log.Println(err)
 		return
 	}
 	file.Id = uuid.New()
@@ -167,6 +168,7 @@ func (f *FileResource) createFile(request *restful.Request, response *restful.Re
 	if err != nil {
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusBadRequest, err.Error())
+		log.Println(err)
 		return
 	}
 	decoder := json.NewDecoder(resp.Body)
@@ -175,6 +177,7 @@ func (f *FileResource) createFile(request *restful.Request, response *restful.Re
 	if err != nil {
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusBadRequest, err.Error())
+		log.Println(err)
 		return
 	}
 	file.Url = fmt.Sprintf("http://%s/%s", info.Url, info.Fid)
@@ -184,12 +187,14 @@ func (f *FileResource) createFile(request *restful.Request, response *restful.Re
 	if err != nil {
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusInternalServerError, err.Error())
+		log.Println(err)
 		return
 	}
 	_, err = conn.Do("SET", file.Id, serialized)
 	if err != nil {
 		response.AddHeader("Content-Type", "text/plain")
 		response.WriteErrorString(http.StatusInternalServerError, err.Error())
+		log.Println(err)
 		return
 	}
 	response.WriteHeader(http.StatusOK)
@@ -317,6 +322,7 @@ var (
 )
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	flag.Parse()
 
 	log.Printf("Will connect redis server: %s", *redisAddress)
